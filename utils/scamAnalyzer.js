@@ -50,8 +50,8 @@ function analyzeText(text) {
   let score = matched.reduce((sum, r) => sum + r.weight, 0);
   score = Math.min(100, score);
 
-  // A completely clean message with no red flags gets a small baseline score
-  if (matched.length === 0) score = Math.floor(Math.random() * 10);
+  // A completely clean message with no red flags gets a deterministic baseline.
+  if (matched.length === 0) score = 5;
 
   const verdict = score >= 70 ? "Dangerous" : score >= 40 ? "Suspicious" : "Safe";
 
@@ -166,7 +166,7 @@ function analyzeWebsite(rawUrl) {
   }
 
   if (/bit\.ly|tinyurl|t\.co|goo\.gl|is\.gd|rb\.gy/i.test(hostname)) {
-    reasons.push("This is a shortened URL — the real destination is hidden");
+    reasons.push("This is a shortened URL - the real destination is hidden");
     score += 15;
   }
 

@@ -1,21 +1,19 @@
 const Scan = require("../models/Scan");
 const { analyzeText } = require("../utils/scamAnalyzer");
 
-// @route POST /api/sms/analyze
-// body: { message: string }
-exports.analyzeSms = async (req, res) => {
+const analyzeMessage = (type, requiredMessage) => async (req, res) => {
   try {
     const { message } = req.body;
 
     if (!message || !message.trim()) {
-      return res.status(400).json({ success: false, message: "SMS message text is required" });
+      return res.status(400).json({ success: false, message: requiredMessage });
     }
 
     const { score, verdict, reasons } = analyzeText(message);
 
     const scan = await Scan.create({
       user: req.user._id,
-      type: "SMS",
+      type,
       input: message.trim(),
       verdict,
       score,
@@ -27,3 +25,11 @@ exports.analyzeSms = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// @route POST /api/sms/analyze
+// body: { message: string }
+exports.analyzeSms = analyzeMessage("SMS", "SMS message text is required");
+
+// @route POST /api/whatsapp/analyze
+// body: { message: string }
+exports.analyzeWhatsApp = analyzeMessage("WhatsApp", "WhatsApp message text is required");

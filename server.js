@@ -17,7 +17,22 @@ const app = express();
 
 connectDB();
 
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:3000", credentials: true }));
+const allowedOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http://localhost:3000")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 app.get("/api/health", (req, res) => {
@@ -28,6 +43,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/scans", scanRoutes);
 app.use("/api/sms", smsRoutes);
+app.use("/api/whatsapp", smsRoutes);
 app.use("/api/email", emailRoutes);
 app.use("/api/website", websiteRoutes);
 app.use("/api/qr", qrRoutes);
