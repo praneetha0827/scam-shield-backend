@@ -1,5 +1,6 @@
 const Scan = require("../models/Scan");
 const { analyzeWebsite } = require("../utils/scamAnalyzer");
+const { riskFields } = require("../utils/scanMapper");
 
 // @route POST /api/website/analyze
 // body: { url }
@@ -11,7 +12,8 @@ exports.analyzeWebsiteScan = async (req, res) => {
       return res.status(400).json({ success: false, message: "Website URL is required" });
     }
 
-    const { score, verdict, reasons } = analyzeWebsite(url.trim());
+    const result = analyzeWebsite(url.trim());
+    const { score, verdict, reasons } = result;
 
     const scan = await Scan.create({
       user: req.user._id,
@@ -20,6 +22,7 @@ exports.analyzeWebsiteScan = async (req, res) => {
       verdict,
       score,
       reasons,
+      ...riskFields(result),
     });
 
     return res.status(201).json({ success: true, scan });

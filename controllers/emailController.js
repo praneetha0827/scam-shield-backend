@@ -1,5 +1,6 @@
 const Scan = require("../models/Scan");
 const { analyzeEmail } = require("../utils/scamAnalyzer");
+const { riskFields } = require("../utils/scanMapper");
 
 // @route POST /api/email/analyze
 // body: { senderEmail, subject, body }
@@ -11,7 +12,8 @@ exports.analyzeEmailScan = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email subject or body is required" });
     }
 
-    const { score, verdict, reasons } = analyzeEmail({ senderEmail, subject, body });
+    const result = analyzeEmail({ senderEmail, subject, body });
+    const { score, verdict, reasons } = result;
 
     const inputSummary = `From: ${senderEmail || "unknown"} — ${subject || "(no subject)"}`;
 
@@ -22,6 +24,7 @@ exports.analyzeEmailScan = async (req, res) => {
       verdict,
       score,
       reasons,
+      ...riskFields(result),
     });
 
     return res.status(201).json({ success: true, scan });

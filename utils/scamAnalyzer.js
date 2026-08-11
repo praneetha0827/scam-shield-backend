@@ -1,232 +1,249 @@
-// Lightweight rule-based scam analyzer.
-// Each matched rule adds weighted points and a human-readable reason.
-// Later this can be swapped for a real ML/LLM call without changing the API contract.
+const { analyzeRisk } = require("./riskEngine");
 
-const RULES = [
-  {
-    reason: "Fake prize / lottery / lucky draw claim",
-    weight: 30,
-    test: (t) => /\b(won|winner|lucky draw|lottery|prize|jackpot|selected)\b/i.test(t),
-  },
-  {
-    reason: "Urgent call to action / time pressure",
-    weight: 15,
-    test: (t) => /\b(urgent|immediately|act now|expire|within 24 hours|last chance|hurry)\b/i.test(t),
-  },
-  {
-    reason: "Suspicious shortened URL",
-    weight: 20,
-    test: (t) => /\b(bit\.ly|tinyurl|t\.co|goo\.gl|is\.gd|rb\.gy)\/\S+/i.test(t),
-  },
-  {
-    reason: "Requests personal or financial information",
-    weight: 20,
-    test: (t) => /\b(otp|pin|cvv|account number|password|aadhaar|card number|bank details)\b/i.test(t),
-  },
-  {
-    reason: "Impersonates a bank, government, or courier service",
-    weight: 15,
-    test: (t) => /\b(income tax|rbi|kyc|customs|courier|parcel held|electricity board|bank account (blocked|suspended))\b/i.test(t),
-  },
-  {
-    reason: "Asks to click a link to claim/verify/unlock",
-    weight: 15,
-    test: (t) => /\b(click here|click the link|verify now|claim now|unlock)\b/i.test(t),
-  },
-  {
-    reason: "Unusual sender pattern (all caps, excessive punctuation)",
-    weight: 8,
-    test: (t) => /(!!!|[A-Z]{6,})/.test(t),
-  },
-  {
-    reason: "Requests money transfer or advance payment",
-    weight: 20,
-    test: (t) => /\b(processing fee|advance payment|transfer.{0,15}(amount|money)|pay.{0,15}to (claim|unlock|release))\b/i.test(t),
-  },
-];
-
-function analyzeText(text) {
-  const matched = RULES.filter((r) => r.test(text));
-  let score = matched.reduce((sum, r) => sum + r.weight, 0);
-  score = Math.min(100, score);
-
-  // A completely clean message with no red flags gets a deterministic baseline.
-  if (matched.length === 0) score = 5;
-
-  const verdict = score >= 70 ? "Dangerous" : score >= 40 ? "Suspicious" : "Safe";
-
-  return {
-    score,
-    verdict,
-    reasons: matched.map((r) => r.reason),
-  };
-}
-
-// Common brand names scammers impersonate via lookalike domains
 const IMPERSONATED_BRANDS = ["paypal", "amazon", "microsoft", "apple", "netflix", "google", "bankofamerica", "hdfc", "icici", "sbi"];
 const FREEMAIL_DOMAINS = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "rediffmail.com"];
-
-const EMAIL_RULES = [
-  {
-    reason: "Sender domain looks like a lookalike/spoofed brand domain",
-    weight: 25,
-    test: (senderEmail) => {
-      if (!senderEmail || !senderEmail.includes("@")) return false;
-      const domain = senderEmail.split("@")[1]?.toLowerCase() || "";
-      return IMPERSONATED_BRANDS.some((brand) => domain.includes(brand) && !domain.endsWith(`${brand}.com`));
-    },
-  },
-  {
-    reason: "Claims to be an official company but sent from a free email provider",
-    weight: 20,
-    test: (senderEmail, subject, body) => {
-      if (!senderEmail || !senderEmail.includes("@")) return false;
-      const domain = senderEmail.split("@")[1]?.toLowerCase() || "";
-      const text = `${subject} ${body}`.toLowerCase();
-      const mentionsBrand = IMPERSONATED_BRANDS.some((b) => text.includes(b));
-      return FREEMAIL_DOMAINS.includes(domain) && mentionsBrand;
-    },
-  },
-  {
-    reason: "Uses a generic greeting instead of your name",
-    weight: 8,
-    test: (senderEmail, subject, body) => /\b(dear customer|dear user|dear valued customer|dear account holder)\b/i.test(body || ""),
-  },
-];
-
-function analyzeEmail({ senderEmail = "", subject = "", body = "" }) {
-  const combinedText = `${subject} ${body}`;
-  const base = analyzeText(combinedText);
-
-  const emailMatched = EMAIL_RULES.filter((r) => r.test(senderEmail, subject, body));
-  const extraScore = emailMatched.reduce((sum, r) => sum + r.weight, 0);
-
-  const score = Math.min(100, base.score + extraScore);
-  const reasons = [...base.reasons, ...emailMatched.map((r) => r.reason)];
-  const verdict = score >= 70 ? "Dangerous" : score >= 40 ? "Suspicious" : "Safe";
-
-  return { score, verdict, reasons };
-}
-
-// ---- Module 6: Website Analysis ----
 const SUSPICIOUS_TLDS = ["xyz", "top", "club", "info", "online", "click", "site", "work", "loan", "gq", "tk", "ml"];
 const SUSPICIOUS_URL_KEYWORDS = ["free", "gift", "claim", "verify", "login-secure", "secure-update", "prize", "reward", "unlock", "confirm-account"];
 
+function withExtraReasons(result, extraReasons) {
+  return {
+    ...result,
+    reasons: [...new Set([...result.reasons, ...extraReasons])],
+    indicators: [...new Set([...result.indicators, ...extraReasons])],
+    detectedIndicators: [...new Set([...result.detectedIndicators, ...extraReasons])],
+  };
+}
+
+function analyzeText(text) {
+  return analyzeRisk({ text, sourceType: "Text" });
+}
+
+function analyzeEmail({ senderEmail = "", subject = "", body = "" }) {
+  const combinedText = `${subject} ${body}`;
+  const extraRules = [
+    {
+      reason: "Sender domain looks like a lookalike/spoofed brand domain",
+      indicator: "Lookalike sender domain",
+      weight: 25,
+      test: () => {
+        if (!senderEmail || !senderEmail.includes("@")) return false;
+        const domain = senderEmail.split("@")[1]?.toLowerCase() || "";
+        return IMPERSONATED_BRANDS.some((brand) => domain.includes(brand) && !domain.endsWith(`${brand}.com`));
+      },
+    },
+    {
+      reason: "Claims to be an official company but sent from a free email provider",
+      indicator: "Brand claim from freemail domain",
+      weight: 20,
+      test: () => {
+        if (!senderEmail || !senderEmail.includes("@")) return false;
+        const domain = senderEmail.split("@")[1]?.toLowerCase() || "";
+        const text = `${subject} ${body}`.toLowerCase();
+        const mentionsBrand = IMPERSONATED_BRANDS.some((brand) => text.includes(brand));
+        return FREEMAIL_DOMAINS.includes(domain) && mentionsBrand;
+      },
+    },
+    {
+      reason: "Uses a generic greeting instead of your name",
+      indicator: "Generic greeting",
+      weight: 8,
+      test: () => /\b(dear customer|dear user|dear valued customer|dear account holder)\b/i.test(body || ""),
+    },
+  ];
+
+  return analyzeRisk({ text: combinedText, sourceType: "Email", extraRules });
+}
+
 function analyzeWebsite(rawUrl) {
   const reasons = [];
-  let score = 0;
-  let url;
+  let scoreBoost = 0;
+  let parsedUrl;
 
   try {
-    url = new URL(rawUrl.match(/^https?:\/\//i) ? rawUrl : `http://${rawUrl}`);
+    parsedUrl = new URL(rawUrl.match(/^https?:\/\//i) ? rawUrl : `http://${rawUrl}`);
   } catch {
-    return { score: 50, verdict: "Suspicious", reasons: ["Could not parse this as a valid URL"] };
+    return withExtraReasons(
+      {
+        ...analyzeRisk({ text: rawUrl, sourceType: "Website" }),
+        score: 50,
+        riskScore: 50,
+        riskLevel: "HIGH",
+        verdict: "Suspicious",
+        scamType: "Suspicious Website",
+        attackerIntent: "Social Engineering",
+        confidence: 0.5,
+      },
+      ["Could not parse this as a valid URL"]
+    );
   }
 
-  const hostname = url.hostname.toLowerCase();
+  const hostname = parsedUrl.hostname.toLowerCase();
   const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
 
-  if (url.protocol !== "https:") {
+  if (parsedUrl.protocol !== "https:") {
     reasons.push("Site does not use HTTPS (no valid SSL encryption)");
-    score += 20;
+    scoreBoost += 20;
   }
-
   if (isIp) {
     reasons.push("URL uses a raw IP address instead of a domain name");
-    score += 25;
+    scoreBoost += 25;
   }
 
   const tld = hostname.split(".").pop();
   if (SUSPICIOUS_TLDS.includes(tld)) {
     reasons.push(`Uses a domain extension (.${tld}) commonly abused for scam sites`);
-    score += 15;
+    scoreBoost += 15;
   }
-
-  const subdomainCount = hostname.split(".").length - 2;
-  if (subdomainCount >= 2) {
+  if (hostname.split(".").length - 2 >= 2) {
     reasons.push("Unusually large number of subdomains");
-    score += 10;
+    scoreBoost += 10;
   }
-
   if ((hostname.match(/-/g) || []).length >= 2) {
     reasons.push("Domain contains multiple hyphens, a common phishing pattern");
-    score += 10;
+    scoreBoost += 10;
   }
-
-  const lowerFullUrl = rawUrl.toLowerCase();
-  if (SUSPICIOUS_URL_KEYWORDS.some((k) => lowerFullUrl.includes(k))) {
+  if (SUSPICIOUS_URL_KEYWORDS.some((keyword) => rawUrl.toLowerCase().includes(keyword))) {
     reasons.push("URL contains scam-associated keywords (free/claim/verify/prize/etc.)");
-    score += 15;
+    scoreBoost += 15;
   }
 
   const brandMatch = IMPERSONATED_BRANDS.find((brand) => hostname.includes(brand) && !hostname.endsWith(`${brand}.com`));
   if (brandMatch) {
     reasons.push(`Domain appears to impersonate "${brandMatch}" without being the official domain`);
-    score += 25;
+    scoreBoost += 25;
   }
-
   if (/bit\.ly|tinyurl|t\.co|goo\.gl|is\.gd|rb\.gy/i.test(hostname)) {
     reasons.push("This is a shortened URL - the real destination is hidden");
-    score += 15;
+    scoreBoost += 15;
   }
 
-  score = Math.min(100, score);
-  const verdict = score >= 70 ? "Dangerous" : score >= 40 ? "Suspicious" : "Safe";
+  const base = analyzeRisk({ text: rawUrl, sourceType: "Website" });
+  const score = Math.min(100, Math.max(base.score, scoreBoost + (base.score === 5 ? 0 : base.score)));
+  const riskLevel = score >= 75 ? "CRITICAL" : score >= 50 ? "HIGH" : score >= 25 ? "MEDIUM" : "LOW";
+  const verdict = riskLevel === "CRITICAL" ? "Dangerous" : riskLevel === "LOW" ? "Safe" : "Suspicious";
 
-  return { score, verdict, reasons };
+  return withExtraReasons(
+    {
+      ...base,
+      score,
+      riskScore: score,
+      riskLevel,
+      verdict,
+      scamType: score >= 50 ? "Suspicious Website" : base.scamType,
+      confidence: Math.min(0.98, Math.max(base.confidence, score / 100)),
+    },
+    reasons
+  );
 }
-
-module.exports = { analyzeText, analyzeEmail, analyzeWebsite, analyzeVoice };
-
-// ---- Module 8: Voice Analysis ----
-const VOICE_RULES = [
-  {
-    reason: "Impersonates government, police, or tax authority over the phone",
-    weight: 25,
-    test: (t) => /\b(income tax department|police department|arrest warrant|legal action|court notice|customs department|cybercrime cell)\b/i.test(t),
-  },
-  {
-    reason: "Robocall / automated IVR pattern (press a number to continue)",
-    weight: 15,
-    test: (t) => /\bpress\s*(1|one|2|two)\b/i.test(t),
-  },
-  {
-    reason: "Asks the caller to install remote access / screen-sharing software",
-    weight: 25,
-    test: (t) => /\b(anydesk|teamviewer|remote access|screen share|screen sharing|install this app)\b/i.test(t),
-  },
-  {
-    reason: "Demands payment via gift cards, crypto, or wire transfer",
-    weight: 25,
-    test: (t) => /\b(gift card|google play card|itunes card|bitcoin|crypto|wire transfer|western union)\b/i.test(t),
-  },
-  {
-    reason: "Claims a family member is in trouble and needs urgent money (impersonation scam)",
-    weight: 25,
-    test: (t) => /\b(your (son|daughter|grandson|granddaughter|child) (is|has been) (in|arrested|kidnapped|in an accident))\b/i.test(t),
-  },
-  {
-    reason: "Threatens account suspension or legal consequences unless caller acts now",
-    weight: 15,
-    test: (t) => /\b(account (will be|is) (suspended|blocked|frozen)|failure to comply|immediate action required)\b/i.test(t),
-  },
-];
 
 function analyzeVoice({ callerNumber = "", transcript = "" }) {
-  const base = analyzeText(transcript);
+  const extraRules = [
+    {
+      reason: "Impersonates government, police, or tax authority over the phone",
+      indicator: "Authority impersonation",
+      weight: 25,
+      test: () => /\b(income tax department|police department|arrest warrant|legal action|court notice|customs department|cybercrime cell)\b/i.test(transcript),
+    },
+    {
+      reason: "Robocall / automated IVR pattern (press a number to continue)",
+      indicator: "Robocall pattern",
+      weight: 15,
+      test: () => /\bpress\s*(1|one|2|two)\b/i.test(transcript),
+    },
+    {
+      reason: "Caller ID is hidden, spoofed, or from a suspicious range",
+      indicator: "Suspicious caller ID",
+      weight: 10,
+      test: () => Boolean(callerNumber && /^(\+?1)?800|unknown|private|blocked/i.test(callerNumber.replace(/\s/g, ""))),
+    },
+  ];
 
-  const voiceMatched = VOICE_RULES.filter((r) => r.test(transcript));
-  const extraScore = voiceMatched.reduce((sum, r) => sum + r.weight, 0);
-
-  let score = Math.min(100, base.score + extraScore);
-  const reasons = [...base.reasons, ...voiceMatched.map((r) => r.reason)];
-
-  if (callerNumber && /^(\+?1)?800|unknown|private|blocked/i.test(callerNumber.replace(/\s/g, ""))) {
-    reasons.push("Caller ID is hidden, spoofed, or from a suspicious range");
-    score = Math.min(100, score + 10);
-  }
-
-  const verdict = score >= 70 ? "Dangerous" : score >= 40 ? "Suspicious" : "Safe";
-
-  return { score, verdict, reasons };
+  return analyzeRisk({ text: transcript, sourceType: "Voice", extraRules });
 }
+
+function analyzeUpiTransaction({ upiId = "", recipient = "", amount = "", context = "", firstTimeRecipient = false } = {}) {
+  const text = `${upiId} ${recipient} ${amount} ${context}`;
+  const extraRules = [
+    {
+      reason: "First-time recipient",
+      indicator: "First-time recipient",
+      weight: 18,
+      test: () => Boolean(firstTimeRecipient),
+    },
+    {
+      reason: "Unknown or generic recipient",
+      indicator: "Unknown recipient",
+      weight: 12,
+      test: () => !recipient || /\bunknown|new|not sure|seller|agent\b/i.test(recipient),
+    },
+    {
+      reason: "High-value transaction amount",
+      indicator: "High amount",
+      weight: 15,
+      test: () => {
+        const numeric = Number(String(amount).replace(/[^\d.]/g, ""));
+        return Number.isFinite(numeric) && numeric >= 10000;
+      },
+    },
+    {
+      reason: "UPI ID format is unusual or unverified",
+      indicator: "Unverified UPI ID",
+      weight: 10,
+      test: () => Boolean(upiId && !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-_]{2,64}$/.test(upiId)),
+    },
+  ];
+
+  const result = analyzeRisk({ text, sourceType: "UPI", extraRules });
+
+  return {
+    ...result,
+    scamType: result.scamType === "Unknown / Other" ? "UPI Transaction Risk" : result.scamType,
+    recipientRisk: result.riskLevel === "LOW" ? "LOW" : result.riskLevel === "MEDIUM" ? "UNKNOWN" : "HIGH",
+    recommendedAction:
+      result.recommendedActions.find((action) => action.toLowerCase().includes("send money")) ||
+      result.recommendedActions[0] ||
+      "Verify the recipient before paying.",
+  };
+}
+
+function analyzeCallerImpersonation({ callerNumber = "", claimedOrganization = "", context = "", unknownCaller = true } = {}) {
+  const text = `${callerNumber} ${claimedOrganization} ${context}`;
+  const extraRules = [
+    {
+      reason: "Unknown caller making a sensitive request",
+      indicator: "Unknown caller",
+      weight: 14,
+      test: () => Boolean(unknownCaller),
+    },
+    {
+      reason: "Caller claims to represent a bank, government, courier, or support team",
+      indicator: "Caller impersonation claim",
+      weight: 18,
+      test: () => /\b(bank|rbi|income tax|police|customs|courier|delivery|support|customer care|kyc)\b/i.test(claimedOrganization || context),
+    },
+    {
+      reason: "Caller asks for OTP, credentials, or payment",
+      indicator: "Sensitive request over call",
+      weight: 24,
+      test: () => /\b(otp|pin|password|cvv|bank details|pay|transfer|upi|remote access|anydesk|teamviewer)\b/i.test(context),
+    },
+    {
+      reason: "Caller uses pressure, threats, or urgent consequences",
+      indicator: "Call pressure tactic",
+      weight: 16,
+      test: () => /\b(urgent|immediately|blocked|suspended|legal action|arrest|last chance|within 24 hours)\b/i.test(context),
+    },
+  ];
+
+  const result = analyzeRisk({ text, sourceType: "Caller", extraRules });
+
+  return {
+    ...result,
+    scamType: result.scamType === "Unknown / Other" ? "Caller Impersonation" : result.scamType,
+    recommendedAction:
+      result.recommendedActions.find((action) => action.toLowerCase().includes("otp")) ||
+      "Do not share OTP, PIN, password, banking details, or payment confirmation with the caller.",
+  };
+}
+
+module.exports = { analyzeText, analyzeEmail, analyzeWebsite, analyzeVoice, analyzeUpiTransaction, analyzeCallerImpersonation };

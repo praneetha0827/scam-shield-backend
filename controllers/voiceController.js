@@ -1,5 +1,6 @@
 const Scan = require("../models/Scan");
 const { analyzeVoice } = require("../utils/scamAnalyzer");
+const { riskFields } = require("../utils/scanMapper");
 
 // @route POST /api/voice/analyze
 // body: { callerNumber, transcript }
@@ -11,7 +12,8 @@ exports.analyzeVoiceScan = async (req, res) => {
       return res.status(400).json({ success: false, message: "Call transcript is required" });
     }
 
-    const { score, verdict, reasons } = analyzeVoice({ callerNumber, transcript });
+    const result = analyzeVoice({ callerNumber, transcript });
+    const { score, verdict, reasons } = result;
 
     const inputSummary = callerNumber ? `Call from ${callerNumber}: "${transcript.slice(0, 80)}${transcript.length > 80 ? "..." : ""}"` : `"${transcript.slice(0, 100)}${transcript.length > 100 ? "..." : ""}"`;
 
@@ -22,6 +24,7 @@ exports.analyzeVoiceScan = async (req, res) => {
       verdict,
       score,
       reasons,
+      ...riskFields(result),
     });
 
     return res.status(201).json({ success: true, scan });

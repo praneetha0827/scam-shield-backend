@@ -1,5 +1,6 @@
 const Scan = require("../models/Scan");
 const { analyzeText } = require("../utils/scamAnalyzer");
+const { riskFields } = require("../utils/scanMapper");
 
 const analyzeMessage = (type, requiredMessage) => async (req, res) => {
   try {
@@ -9,7 +10,8 @@ const analyzeMessage = (type, requiredMessage) => async (req, res) => {
       return res.status(400).json({ success: false, message: requiredMessage });
     }
 
-    const { score, verdict, reasons } = analyzeText(message);
+    const result = analyzeText(message);
+    const { score, verdict, reasons } = result;
 
     const scan = await Scan.create({
       user: req.user._id,
@@ -18,6 +20,7 @@ const analyzeMessage = (type, requiredMessage) => async (req, res) => {
       verdict,
       score,
       reasons,
+      ...riskFields(result),
     });
 
     return res.status(201).json({ success: true, scan });

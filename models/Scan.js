@@ -10,7 +10,7 @@ const ScanSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["SMS", "Email", "Website", "QR Code", "Voice", "WhatsApp"],
+      enum: ["SMS", "Email", "Website", "QR Code", "Voice", "WhatsApp", "UPI", "Interceptor", "Caller"],
       required: true,
     },
     input: {
@@ -32,6 +32,39 @@ const ScanSchema = new mongoose.Schema(
     reasons: {
       type: [String],
       default: [],
+    },
+    riskLevel: {
+      type: String,
+      enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    },
+    scamType: {
+      type: String,
+      trim: true,
+    },
+    attackerIntent: {
+      type: String,
+      trim: true,
+    },
+    confidence: {
+      type: Number,
+      min: 0,
+      max: 1,
+    },
+    indicators: {
+      type: [String],
+      default: [],
+    },
+    recommendedActions: {
+      type: [String],
+      default: [],
+    },
+    entities: {
+      urls: { type: [String], default: [] },
+      emails: { type: [String], default: [] },
+      phoneNumbers: { type: [String], default: [] },
+      upiIds: { type: [String], default: [] },
+      amounts: { type: [String], default: [] },
+      otpReferences: { type: [String], default: [] },
     },
   },
   { timestamps: true }

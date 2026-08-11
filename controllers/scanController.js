@@ -5,7 +5,7 @@ const Scan = require("../models/Scan");
 // will call their own analysis logic and then save the result via this shape.
 exports.createScan = async (req, res) => {
   try {
-    const { type, input, verdict, score, reasons } = req.body;
+    const { type, input, verdict, score, reasons, riskLevel, scamType, attackerIntent, confidence, indicators, recommendedActions, entities } = req.body;
 
     if (!type || !input || !verdict || score === undefined) {
       return res.status(400).json({ success: false, message: "type, input, verdict and score are required" });
@@ -18,6 +18,13 @@ exports.createScan = async (req, res) => {
       verdict,
       score,
       reasons: reasons || [],
+      riskLevel,
+      scamType,
+      attackerIntent,
+      confidence,
+      indicators: indicators || [],
+      recommendedActions: recommendedActions || [],
+      entities: entities || {},
     });
 
     return res.status(201).json({ success: true, scan });

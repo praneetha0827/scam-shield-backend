@@ -12,6 +12,9 @@ const qrRoutes = require("./routes/qr");
 const voiceRoutes = require("./routes/voice");
 const reportRoutes = require("./routes/reports");
 const adminRoutes = require("./routes/admin");
+const upiRoutes = require("./routes/upi");
+const interceptorRoutes = require("./routes/interceptor");
+const callerRoutes = require("./routes/caller");
 
 const app = express();
 
@@ -48,6 +51,9 @@ app.use("/api/email", emailRoutes);
 app.use("/api/website", websiteRoutes);
 app.use("/api/qr", qrRoutes);
 app.use("/api/voice", voiceRoutes);
+app.use("/api/upi", upiRoutes);
+app.use("/api/interceptor", interceptorRoutes);
+app.use("/api/caller", callerRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/admin", adminRoutes);
 

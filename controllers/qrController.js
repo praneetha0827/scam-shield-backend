@@ -1,5 +1,6 @@
 const Scan = require("../models/Scan");
 const { analyzeText, analyzeWebsite } = require("../utils/scamAnalyzer");
+const { riskFields } = require("../utils/scanMapper");
 
 const URL_PATTERN = /^(https?:\/\/|www\.)/i;
 
@@ -16,7 +17,8 @@ exports.analyzeQr = async (req, res) => {
     const data = qrData.trim();
     const isUrl = URL_PATTERN.test(data) || /\.[a-z]{2,}(\/|$)/i.test(data);
 
-    const { score, verdict, reasons } = isUrl ? analyzeWebsite(data) : analyzeText(data);
+    const result = isUrl ? analyzeWebsite(data) : analyzeText(data);
+    const { score, verdict, reasons } = result;
 
     const scan = await Scan.create({
       user: req.user._id,
@@ -25,6 +27,7 @@ exports.analyzeQr = async (req, res) => {
       verdict,
       score,
       reasons,
+      ...riskFields(result),
     });
 
     return res.status(201).json({ success: true, scan });
