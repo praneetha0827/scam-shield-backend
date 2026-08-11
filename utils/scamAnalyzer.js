@@ -4,6 +4,12 @@ const IMPERSONATED_BRANDS = ["paypal", "amazon", "microsoft", "apple", "netflix"
 const FREEMAIL_DOMAINS = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "rediffmail.com"];
 const SUSPICIOUS_TLDS = ["xyz", "top", "club", "info", "online", "click", "site", "work", "loan", "gq", "tk", "ml"];
 const SUSPICIOUS_URL_KEYWORDS = ["free", "gift", "claim", "verify", "login-secure", "secure-update", "prize", "reward", "unlock", "confirm-account"];
+const SUSPICIOUS_ATTACHMENT_EXTENSIONS = ["exe", "apk", "scr", "bat", "cmd", "js", "vbs", "iso", "zip", "rar"];
+
+function emailDomain(email) {
+  if (!email || !String(email).includes("@")) return "";
+  return String(email).split("@").pop().trim().toLowerCase();
+}
 
 function withExtraReasons(result, extraReasons) {
   return {
@@ -18,16 +24,15 @@ function analyzeText(text) {
   return analyzeRisk({ text, sourceType: "Text" });
 }
 
-function analyzeEmail({ senderEmail = "", subject = "", body = "" }) {
-  const combinedText = `${subject} ${body}`;
+function analyzeEmail({ senderEmail = "", replyTo = "", subject = "", body = "", links = "", headers = "", attachments = "" }) {
+  const combinedText = [subject, body, links, headers, attachments].filter(Boolean).join(" ");
   const extraRules = [
     {
       reason: "Sender domain looks like a lookalike/spoofed brand domain",
       indicator: "Lookalike sender domain",
       weight: 25,
       test: () => {
-        if (!senderEmail || !senderEmail.includes("@")) return false;
-        const domain = senderEmail.split("@")[1]?.toLowerCase() || "";
+        const domain = emailDomain(senderEmail);
         return IMPERSONATED_BRANDS.some((brand) => domain.includes(brand) && !domain.endsWith(`${brand}.com`));
       },
     },
@@ -36,8 +41,7 @@ function analyzeEmail({ senderEmail = "", subject = "", body = "" }) {
       indicator: "Brand claim from freemail domain",
       weight: 20,
       test: () => {
-        if (!senderEmail || !senderEmail.includes("@")) return false;
-        const domain = senderEmail.split("@")[1]?.toLowerCase() || "";
+        const domain = emailDomain(senderEmail);
         const text = `${subject} ${body}`.toLowerCase();
         const mentionsBrand = IMPERSONATED_BRANDS.some((brand) => text.includes(brand));
         return FREEMAIL_DOMAINS.includes(domain) && mentionsBrand;
@@ -48,6 +52,31 @@ function analyzeEmail({ senderEmail = "", subject = "", body = "" }) {
       indicator: "Generic greeting",
       weight: 8,
       test: () => /\b(dear customer|dear user|dear valued customer|dear account holder)\b/i.test(body || ""),
+    },
+    {
+      reason: "Reply-To address uses a different domain than the sender",
+      indicator: "Reply-To mismatch",
+      weight: 18,
+      test: () => {
+        const senderDomain = emailDomain(senderEmail);
+        const replyDomain = emailDomain(replyTo);
+        return Boolean(senderDomain && replyDomain && senderDomain !== replyDomain);
+      },
+    },
+    {
+      reason: "Email authentication header suggests SPF, DKIM, or DMARC failed",
+      indicator: "Email authentication failure",
+      weight: 30,
+      test: () => /\b(spf|dkim|dmarc)\s*=\s*(fail|softfail|neutral|none)\b/i.test(headers || ""),
+    },
+    {
+      reason: "Email contains a risky attachment type",
+      indicator: "Risky attachment",
+      weight: 25,
+      test: () => {
+        const attachmentText = String(attachments || "").toLowerCase();
+        return SUSPICIOUS_ATTACHMENT_EXTENSIONS.some((ext) => new RegExp(`\\.${ext}\\b`, "i").test(attachmentText));
+      },
     },
   ];
 

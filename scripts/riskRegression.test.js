@@ -95,6 +95,20 @@ const cases = [
     expectIntent: "OTP Theft",
   },
   {
+    name: "Email spoofing with failed authentication",
+    run: () =>
+      analyzeEmail({
+        senderEmail: "billing@amazon-support.xyz",
+        replyTo: "refunddesk@gmail.com",
+        subject: "Invoice refund pending",
+        body: "Dear customer, click here to confirm your account refund.",
+        links: "http://amazon-login-secure.xyz/refund",
+        headers: "Authentication-Results: spf=fail dkim=fail dmarc=fail",
+        attachments: "refund-form.zip",
+      }),
+    expectMinRisk: "CRITICAL",
+  },
+  {
     name: "Voice remote access scam",
     run: () => analyzeVoice({ callerNumber: "Unknown", transcript: "This is bank support. Install AnyDesk and share your screen to unblock account immediately." }),
     expectMinRisk: "CRITICAL",

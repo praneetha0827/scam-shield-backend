@@ -3,16 +3,16 @@ const { analyzeEmail } = require("../utils/scamAnalyzer");
 const { riskFields } = require("../utils/scanMapper");
 
 // @route POST /api/email/analyze
-// body: { senderEmail, subject, body }
+// body: { senderEmail, replyTo, subject, body, links, headers, attachments }
 exports.analyzeEmailScan = async (req, res) => {
   try {
-    const { senderEmail, subject, body } = req.body;
+    const { senderEmail, replyTo, subject, body, links, headers, attachments } = req.body;
 
-    if (!subject?.trim() && !body?.trim()) {
-      return res.status(400).json({ success: false, message: "Email subject or body is required" });
+    if (![subject, body, links, headers, attachments].some((value) => value?.trim())) {
+      return res.status(400).json({ success: false, message: "Email content, links, headers, or attachment details are required" });
     }
 
-    const result = analyzeEmail({ senderEmail, subject, body });
+    const result = analyzeEmail({ senderEmail, replyTo, subject, body, links, headers, attachments });
     const { score, verdict, reasons } = result;
 
     const inputSummary = `From: ${senderEmail || "unknown"} — ${subject || "(no subject)"}`;
